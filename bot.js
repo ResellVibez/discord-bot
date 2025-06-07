@@ -1,179 +1,103 @@
-const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
+const { Client, GatewayIntentBits, Collection, EmbedBuilder } = require("discord.js");
+const fs = require('node:fs/promises'); // Per la persistenza dei dati
+const path = require('node:path');      // Per gestire i percorsi dei file
+
+// Carica la configurazione
+const config = require('./config.json');
+const { PREFIX, STAFF_ROLES, CURRENCY } = config;
+
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers,
-  ],
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers,
+    ],
 });
 
-// CONFIGURAZIONE
-const STAFF_ROLES = ["Admin", "Staff"]; // Ruoli autorizzati (modificabili)
-const PREFIX = "!";
-const CURRENCY = "€";
+// COLLEZIONE DEI COMANDI
+client.commands = new Collection();
+// DATABASE DEI CREDITI UTENTE (in memoria, verrà caricato/salvato da file)
+client.userCredits = {};
+const DATA_FILE = 'userCredits.json';
 
-// DATABASE
-const userCredits = {};
+// --- Funzioni per la persistenza dei dati ---
+async function loadCredits() {
+    try {
+        const data = await fs.readFile(DATA_FILE, 'utf8');
+        Object.assign(client.userCredits, JSON.parse(data));
+        console.log('✅ Crediti caricati dal file.');
+    } catch (error) {
+        if (error.code === 'ENOENT') {
+            console.log('Nessun file di crediti trovato, inizio con un database vuoto.');
+        } else {
+            console.error('❌ Errore durante il caricamento dei crediti:', error);
+        }
+    }
+}
 
-// TARIFFE E BONUS
-const tieredAmounts = [15, 30, 50, 100, 200];
-const bonusRates = {
-  15: 1.1, // +10%
-  30: 1.15, // +15%
-  50: 1.2, // +20%
-  100: 1.3, // +30%
-  200: 1.5, // +50%
-};
+async function saveCredits() {
+    try {
+        await fs.writeFile(DATA_FILE, JSON.stringify(client.userCredits, null, 2), 'utf8');
+        // console.log('Crediti salvati su file.'); // Scommenta per debug
+    } catch (error) {
+        console.error('❌ Errore durante il salvataggio dei crediti:', error);
+    }
+}
 
-client.on("ready", () => {
-  console.log(`✅ Bot online come ${client.user.tag}`);
+// --- Caricamento dei comandi ---
+async function loadCommands() {
+    const commandsPath = path.join(__dirname, 'commands');
+    const commandFiles = (await fs.readdir(commandsPath)).filter(file => file.endsWith('.js'));
+
+    for (const file of commandFiles) {
+        const filePath = path.join(commandsPath, file);
+        try {
+            const command = require(filePath);
+            if ('data' in command && 'execute' in command) {
+                client.commands.set(command.data.name, command);
+            } else {
+                console.warn(`[WARNING] Il comando in ${filePath} manca di una proprietà "data" o "execute" richiesta.`);
+            }
+        } catch (error) {
+            console.error(`❌ Errore durante il caricamento del comando da ${filePath}:\n`, error);
+        }
+    }
+    console.log(`✅ Caricati ${client.commands.size} comandi.`);
+}
+
+// --- Eventi del Bot ---
+client.on("ready", async () => {
+    await loadCredits(); // Carica i crediti all'avvio
+    await loadCommands(); // Carica i comandi
+    console.log(`✅ Bot online come ${client.user.tag}`);
 });
 
 client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
-  if (!message.content.startsWith(PREFIX)) return;
+    if (message.author.bot) return;
+    if (!message.content.startsWith(PREFIX)) return;
 
-  const args = message.content.slice(PREFIX.length).trim().split(/ +/);
-  const command = args.shift().toLowerCase();
+    const args = message.content.slice(PREFIX.length).trim().split(/ +/);
+    const commandName = args.shift().toLowerCase();
 
-  // COMANDO SALDO (accessibile a tutti)
-  if (command === "saldo") {
-    const targetUser = message.mentions.users.first() || message.author;
-    const balance = userCredits[targetUser.id] || 0;
+    const command = client.commands.get(commandName);
 
-    const embed = new EmbedBuilder()
-      .setColor("#00FFFF")
-      .setDescription(
-        `💰 Saldo ${targetUser.toString()}: **${balance.toFixed(2)}${CURRENCY}**`,
-      );
+    if (!command) return; // Se il comando non esiste
 
-    return message.reply({ embeds: [embed] });
-  }
-
-  // VERIFICA PERMESSI STAFF PER GLI ALTRI COMANDI
-  const member = await message.guild.members
-    .fetch(message.author.id)
-    .catch(() => null);
-  if (!member) return;
-
-  const isStaff = member.roles.cache.some((role) =>
-    STAFF_ROLES.includes(role.name),
-  );
-  if (!isStaff) {
-    await message.delete().catch(() => {});
-    return;
-  }
-
-  // ELIMINA COMANDO DELLO STAFF
-  await message.delete().catch(() => {});
-
-  // !ricarica @user 50 (solo importi tier)
-  if (command === "ricarica") {
-    const targetUser = message.mentions.users.first();
-    const amount = parseFloat(args[1]);
-
-    if (!targetUser || !amount || !tieredAmounts.includes(amount)) {
-      const errorEmbed = new EmbedBuilder()
-        .setColor("#FF0000")
-        .setDescription(
-          `❌ **Formato errato!** Usa: \`${PREFIX}ricarica @utente 50\`\n**Importi validi:** ${tieredAmounts.join(", ")}`,
-        );
-      return message.channel
-        .send({ embeds: [errorEmbed] })
-        .then((msg) => setTimeout(() => msg.delete(), 10000));
+    // Passa le funzioni di salvataggio/caricamento e la configurazione ai comandi
+    // e anche il client per accedere a client.userCredits
+    try {
+        await command.execute(message, args, client, saveCredits, config);
+    } catch (error) {
+        console.error(`❌ Errore durante l'esecuzione del comando ${commandName}:`, error);
+        const errorEmbed = new EmbedBuilder()
+            .setColor("#FF0000")
+            .setDescription("❌ Si è verificato un errore durante l'esecuzione di questo comando!");
+        await message.reply({ embeds: [errorEmbed], ephemeral: true })
+            .then((msg) => setTimeout(() => msg.delete().catch(() => {}), config.ERROR_MESSAGE_TIMEOUT_MS))
+            .catch(() => {}); // Gestisce l'errore se il messaggio non può essere eliminato
     }
-
-    const total = amount * bonusRates[amount];
-    userCredits[targetUser.id] = (userCredits[targetUser.id] || 0) + total;
-
-    const successEmbed = new EmbedBuilder()
-      .setColor("#00FF00")
-      .setDescription(
-        `✅ ${targetUser.toString()} ha ricevuto **${total.toFixed(2)}${CURRENCY}** (${amount}${CURRENCY} + ${((bonusRates[amount] - 1) * 100).toFixed(0)}% bonus)`,
-      )
-      .addFields({
-        name: "Nuovo saldo",
-        value: `${userCredits[targetUser.id].toFixed(2)}${CURRENCY}`,
-        inline: true,
-      });
-
-    return message.channel.send({ embeds: [successEmbed] });
-  }
-
-  // !aggiungi @user 25 (qualsiasi importo)
-  if (command === "aggiungi") {
-    const targetUser = message.mentions.users.first();
-    const amount = parseFloat(args[1]);
-
-    if (!targetUser || isNaN(amount) || amount <= 0) {
-      const errorEmbed = new EmbedBuilder()
-        .setColor("#FF0000")
-        .setDescription(
-          `❌ **Formato errato!** Usa: \`${PREFIX}aggiungi @utente 25\`\nImporto deve essere un numero positivo`,
-        );
-      return message.channel
-        .send({ embeds: [errorEmbed] })
-        .then((msg) => setTimeout(() => msg.delete(), 10000));
-    }
-
-    userCredits[targetUser.id] = (userCredits[targetUser.id] || 0) + amount;
-
-    const successEmbed = new EmbedBuilder()
-      .setColor("#00FF00")
-      .setDescription(
-        `⚡ ${targetUser.toString()} ha ricevuto **${amount.toFixed(2)}${CURRENCY}** (credito diretto)`,
-      )
-      .addFields({
-        name: "Nuovo saldo",
-        value: `${userCredits[targetUser.id].toFixed(2)}${CURRENCY}`,
-        inline: true,
-      });
-
-    return message.channel.send({ embeds: [successEmbed] });
-  }
-
-  // !togli @user 10
-  if (command === "togli") {
-    const targetUser = message.mentions.users.first();
-    const amount = parseFloat(args[1]);
-
-    if (!targetUser || isNaN(amount) || amount <= 0) {
-      const errorEmbed = new EmbedBuilder()
-        .setColor("#FF0000")
-        .setDescription(
-          `❌ **Formato errato!** Usa: \`${PREFIX}togli @utente 10\`\nImporto deve essere un numero positivo`,
-        );
-      return message.channel
-        .send({ embeds: [errorEmbed] })
-        .then((msg) => setTimeout(() => msg.delete(), 10000));
-    }
-
-    if ((userCredits[targetUser.id] || 0) < amount) {
-      const errorEmbed = new EmbedBuilder()
-        .setColor("#FF0000")
-        .setDescription(
-          `❌ **Credito insufficiente!**\nSaldo attuale: **${(userCredits[targetUser.id] || 0).toFixed(2)}${CURRENCY}**`,
-        );
-      return message.channel
-        .send({ embeds: [errorEmbed] })
-        .then((msg) => setTimeout(() => msg.delete(), 10000));
-    }
-
-    userCredits[targetUser.id] -= amount;
-    const successEmbed = new EmbedBuilder()
-      .setColor("#FFA500")
-      .setDescription(
-        `📦 **Tolti ${amount.toFixed(2)}${CURRENCY}** da ${targetUser.toString()}`,
-      )
-      .addFields({
-        name: "Nuovo saldo",
-        value: `${userCredits[targetUser.id].toFixed(2)}${CURRENCY}`,
-        inline: true,
-      });
-
-    return message.channel.send({ embeds: [successEmbed] });
-  }
 });
 
+// Login del bot con il token
 client.login(process.env.DISCORD_BOT_TOKEN);
