@@ -176,6 +176,5 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-client.login(
-  "MTM4MDQ3ODA2NzI4OTM1ODQ3Nw.GGeEtq.xwT0cViJ70p3ppsEIZEDO6EVqzMmCeA6wVCwyo",
+client.login(process.env.DISCORD_BOT_TOKEN);
 );
