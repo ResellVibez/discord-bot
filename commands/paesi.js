@@ -4,14 +4,24 @@ module.exports = {
     data: {
         name: 'paesi',
         description: 'Mostra i paesi disponibili per la spedizione con bandiere.',
+        staffOnly: true, // <--- AGGIUNTO/MODIFICATO: Solo per lo staff
     },
     async execute(message, args, client, saveCredits, config) {
+        const { STAFF_ROLES } = config; // <--- AGGIUNTO: Destruttura STAFF_ROLES
+
+        // --- Verifica Permessi Staff ---
+        const member = await message.guild.members.fetch(message.author.id).catch(() => null);
+        const isStaff = member && member.roles.cache.some(role => STAFF_ROLES.includes(role.name));
+        if (!isStaff) {
+            await message.delete().catch(() => {}); // Elimina il comando se non è staff
+            return; // Interrompe l'esecuzione del comando
+        }
+        // --- Fine Verifica Permessi Staff ---
+
         await message.delete().catch(() => {});
 
-        // Ho migliorato la descrizione per renderla più accattivante
         const embedDescription = `🌍 Il nostro servizio di spedizione porta i tuoi pacchi in giro per il mondo! Attualmente siamo disponibili per le seguenti destinazioni:`;
 
-        // Lista dei paesi con le emoji delle bandiere
         const paesiList = `
 🇮🇹 Italia
 🇪🇸 Spagna
@@ -25,12 +35,12 @@ module.exports = {
 `.trim();
 
         const paesiEmbed = new EmbedBuilder()
-            .setColor('#3499FF') // Un blu più vivace
-            .setTitle('✈️ Paesi Disponibili per la Spedizione') // Aggiunto un'emoji al titolo
+            .setColor('#3499FF')
+            .setTitle('✈️ Paesi Disponibili per la Spedizione')
             .setDescription(embedDescription)
             .addFields(
                 {
-                    name: 'Destinazioni Servite:', // Titolo del campo più descrittivo
+                    name: 'Destinazioni Servite:',
                     value: paesiList,
                     inline: false
                 }
@@ -38,6 +48,7 @@ module.exports = {
             .setTimestamp()
             .setFooter({
                 text: 'Controlla sempre il canale destinazioni per aggiornamenti!',
+                iconURL: client.user.displayAvatarURL()
             });
 
         await message.channel.send({ embeds: [paesiEmbed] })

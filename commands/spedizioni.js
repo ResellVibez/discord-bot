@@ -4,8 +4,20 @@ module.exports = {
     data: {
         name: 'spedizione',
         description: 'Mostra informazioni sulle etichette di spedizione.',
+        staffOnly: true, // <--- AGGIUNTO/MODIFICATO: Solo per lo staff
     },
     async execute(message, args, client, saveCredits, config) {
+        const { STAFF_ROLES } = config; // <--- AGGIUNTO: Destruttura STAFF_ROLES
+
+        // --- Verifica Permessi Staff ---
+        const member = await message.guild.members.fetch(message.author.id).catch(() => null);
+        const isStaff = member && member.roles.cache.some(role => STAFF_ROLES.includes(role.name));
+        if (!isStaff) {
+            await message.delete().catch(() => {}); // Elimina il comando se non è staff
+            return; // Interrompe l'esecuzione del comando
+        }
+        // --- Fine Verifica Permessi Staff ---
+
         await message.delete().catch(() => {});
 
         const spedizioneEmbed = new EmbedBuilder()
@@ -29,7 +41,7 @@ module.exports = {
                     inline: false
                 },
                 {
-                    name: '❗ Importante', // Aggiunto un titolo per la nota di responsabilità
+                    name: '❗ Importante',
                     value: 'ShipX si impegna a offrire un servizio sicuro e affidabile, ma non è responsabile per eventuali smarrimenti, danni o altri imprevisti legati ai pacchi.',
                     inline: false
                 }
