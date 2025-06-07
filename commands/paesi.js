@@ -2,46 +2,45 @@ const { EmbedBuilder } = require('discord.js');
 
 module.exports = {
     data: {
-        name: 'paesi', // Il comando sarà !paesi
-        description: 'Mostra i paesi disponibili per la spedizione.',
-        // Questo comando è accessibile a TUTTI gli utenti, quindi NON mettiamo staffOnly: true
+        name: 'paesi',
+        description: 'Mostra i paesi disponibili per la spedizione con bandiere.',
     },
     async execute(message, args, client, saveCredits, config) {
-        // Elimina il messaggio del comando originale per pulizia del canale
         await message.delete().catch(() => {});
 
-        // --- Testo Esatto per la Descrizione e i Campi ---
-        // Ho formattato il testo esattamente come richiesto
-        const embedDescription = `Il nostro servizio di spedizione è attualmente disponibile per le seguenti destinazioni:`;
-        const paesiList = `
-Italia
-Spagna
-Francia
-Austria
-Belgio
-Portogallo
-Germania
-Paesi Bassi
-Lussemburgo
-`.trim(); // .trim() per rimuovere spazi bianchi extra all'inizio/fine
+        // Ho migliorato la descrizione per renderla più accattivante
+        const embedDescription = `🌍 Il nostro servizio di spedizione porta i tuoi pacchi in giro per il mondo! Attualmente siamo disponibili per le seguenti destinazioni:`;
 
-        // --- Costruisci l'Embed ---
+        // Lista dei paesi con le emoji delle bandiere
+        const paesiList = `
+🇮🇹 Italia
+🇪🇸 Spagna
+🇫🇷 Francia
+🇦🇹 Austria
+🇧🇪 Belgio
+🇵🇹 Portogallo
+🇩🇪 Germania
+🇳🇱 Paesi Bassi
+🇱🇺 Lussemburgo
+`.trim();
+
         const paesiEmbed = new EmbedBuilder()
-            .setColor('#3498DB') // Un colore blu (info/elenco)
-            .setTitle('Paesi Disponibili per la Spedizione')
+            .setColor('#3499FF') // Un blu più vivace
+            .setTitle('✈️ Paesi Disponibili per la Spedizione') // Aggiunto un'emoji al titolo
             .setDescription(embedDescription)
             .addFields(
                 {
-                    name: 'Destinazioni:', // Un titolo per la lista dei paesi
+                    name: 'Destinazioni Servite:', // Titolo del campo più descrittivo
                     value: paesiList,
                     inline: false
                 }
             )
-            .setTimestamp() // Aggiunge automaticamente la data e l'ora attuali
-            // Nessun footer specifico richiesto, quindi lo ometto per seguire "esatte parole"
-            ;
+            .setTimestamp()
+            .setFooter({
+                text: 'Controlla sempre il canale destinazioni per aggiornamenti!',
+                iconURL: client.user.displayAvatarURL() // Ho usato l'icona del bot come footer, per coerenza
+            });
 
-        // --- Invia l'Embed nel Canale ---
         await message.channel.send({ embeds: [paesiEmbed] })
             .catch(error => console.error('❌ Errore nell\'invio dell\'embed paesi:', error));
     },
