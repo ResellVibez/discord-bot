@@ -2,50 +2,40 @@ const { EmbedBuilder } = require('discord.js');
 
 module.exports = {
     data: {
-        name: 'spedizione', // Il comando sarà !spedizione
+        name: 'spedizione',
         description: 'Mostra informazioni sulle etichette di spedizione.',
-        // Questo comando è accessibile a TUTTI gli utenti, quindi NON mettiamo staffOnly: true
+        // Questo comando è accessibile a TUTTI gli utenti
     },
     async execute(message, args, client, saveCredits, config) {
-        // Elimina il messaggio del comando originale per pulizia del canale
         await message.delete().catch(() => {});
 
-        // --- Testo Esatto per la Descrizione e i Campi ---
-        // Ho formattato il testo esattamente come richiesto
-        const embedDescription = `Il nostro servizio fornisce etichette fino a 2 kg. Il prezzo è fisso, indipendentemente dal peso (0.5 kg, 1 kg o 2 kg).`;
-        const prezziValue = `Etichetta Nazionale (Italia): €1.50\nEtichetta Internazionale: €2.50`;
-        const controllaValue = `Prima di richiedere una spedizione, controlla il canale <#1347931851481808959> per assicurarti che la destinazione sia supportata.`;
-        const notaValue = `Le etichette sono valide solo per le destinazioni elencate nel canale.\nSe hai dubbi, apri un ticket o contatta lo staff.`;
-
-
-        // --- Costruisci l'Embed ---
         const spedizioneEmbed = new EmbedBuilder()
-            .setColor('#FFA500') // Colore dell'embed (arancione)
-            .setTitle('Etichette di Spedizione')
-            .setDescription(embedDescription)
+            .setColor('#FF8C00') // Un arancione più intenso
+            .setTitle('📦 Etichette di Spedizione') // Aggiunta emoji pacco al titolo
+            .setDescription('Benvenuto nel nostro servizio di etichette di spedizione! Offriamo soluzioni semplici e a prezzo fisso per i tuoi pacchi fino a 2 kg, indipendentemente dal peso esatto (0.5 kg, 1 kg o 2 kg).') // Descrizione più accattivante
             .addFields(
                 {
-                    name: 'Prezzi',
-                    value: prezziValue,
+                    name: '💰 Prezzi', // Aggiunta emoji a prezzi
+                    value: 'Etichetta Nazionale (Italia): **€1.50**\nEtichetta Internazionale: **€2.50**', // Prezzi in grassetto
                     inline: false
                 },
                 {
-                    name: 'Controlla prima di ordinare',
-                    value: controllaValue,
+                    name: '👀 Controlla prima di ordinare', // Aggiunta emoji occhio
+                    value: 'Prima di richiedere una spedizione, controlla il canale <#1347931851481808959> per assicurarti che la destinazione sia supportata.',
                     inline: false
                 },
                 {
-                    name: 'Nota',
-                    value: notaValue, // Il testo della nota include già la frase finale
+                    name: '💡 Nota Importante', // Aggiunta emoji lampadina
+                    value: 'Le etichette sono valide solo per le destinazioni elencate nel canale.',
                     inline: false
                 }
             )
-            .setTimestamp() // Aggiunge automaticamente la data e l'ora attuali nel footer
-            // Il footer è omesso perché l'ultima frase è già nella "Nota" field, come da tua richiesta "esatte parole"
-            // Se volessi un footer separato, dovresti spostare la frase dalla Nota al footer e mettere un iconURL.
-            ;
+            .setTimestamp() // Aggiunge data e ora
+            .setFooter({
+                text: 'Per qualsiasi dubbio o domanda, apri un ticket o contatta lo staff.', // Messaggio spostato nel footer
+                iconURL: client.user.displayAvatarURL() // Icona del bot nel footer per coerenza
+            });
 
-        // --- Invia l'Embed nel Canale ---
         await message.channel.send({ embeds: [spedizioneEmbed] })
             .catch(error => console.error('❌ Errore nell\'invio dell\'embed spedizione:', error));
     },
