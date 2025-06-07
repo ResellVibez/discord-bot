@@ -6,10 +6,9 @@ module.exports = {
         description: 'Mostra il saldo dei crediti tuo o di un altro utente.',
     },
     async execute(message, args, client, saveCredits, config) {
-        const { CURRENCY, STAFF_ROLES, ERROR_MESSAGE_TIMEOUT_MS } = config; // Aggiunto ERROR_MESSAGE_TIMEOUT_MS
+        const { CURRENCY, STAFF_ROLES, ERROR_MESSAGE_TIMEOUT_MS } = config;
 
-        const targetUser = message.mentions.users.first(); // Ottieni l'utente menzionato, se presente
-        // Verifica se l'autore del messaggio è staff
+        const targetUser = message.mentions.users.first();
         const authorIsStaff = message.member && message.member.roles.cache.some(role => STAFF_ROLES.includes(role.name));
 
         // Logica: se un utente è menzionato E l'autore del messaggio NON è staff
@@ -18,11 +17,10 @@ module.exports = {
             const errorEmbed = new EmbedBuilder()
                 .setColor("#FF0000")
                 .setDescription("❌ Non hai il permesso di visualizzare il saldo di altri utenti.");
-
-            // Invia il messaggio di errore e lo fa auto-eliminare dopo il timeout
+            
             return message.channel.send({ embeds: [errorEmbed] })
                 .then(msg => setTimeout(() => msg.delete().catch(() => {}), ERROR_MESSAGE_TIMEOUT_MS))
-                .catch(() => {}); // Gestisce errori nell'eliminazione del messaggio di errore
+                .catch(() => {});
         }
 
         // Determina quale utente mostrare il saldo: quello menzionato o l'autore del messaggio
@@ -31,16 +29,17 @@ module.exports = {
 
         const embed = new EmbedBuilder()
             .setColor("#00FFFF")
-            .setDescription(`💰 Saldo ${userToShowBalance.toString()}: **${balance.toFixed(2)}${CURRENCY}**`);
+            .setDescription(
+                `💰 Saldo ${userToShowBalance.toString()}: **${balance.toFixed(2)}${CURRENCY}**`,
+            );
 
-        // Se l'utente è staff E ha menzionato qualcuno, elimina il suo comando
+        // *** IMPORTANTE: Invia l'embed con il saldo PRIMA di eliminare il messaggio ***
+        await message.reply({ embeds: [embed] });
+
+        // Se l'utente è staff E ha menzionato qualcuno, elimina il suo comando ORIGINALE
         if (targetUser && authorIsStaff) {
              await message.delete().catch(() => {});
-        } else {
-            // Se non ha menzionato nessuno (quindi !saldo) o se è staff ma non ha menzionato nessuno,
-            // il messaggio non viene eliminato, o risponde con il proprio saldo
         }
-
-        return message.reply({ embeds: [embed] });
+        // Per !saldo (senza menzione), il messaggio originale non viene eliminato, resta visibile a chi lo ha digitato.
     },
 };
