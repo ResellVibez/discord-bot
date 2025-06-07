@@ -18,7 +18,7 @@ const client = new Client({
 client.commands = new Collection();
 client.userCredits = {}; // Qui verranno memorizzati i crediti degli utenti
 
-const creditsFilePath = path.join(__dirname, 'crediti.json');
+const creditsFilePath = path.join(__dirname, 'userCredits.json');
 
 // Funzione per caricare i crediti
 const loadCredits = () => {
