@@ -58,11 +58,6 @@ Grazie per il vostro supporto e buon divertimento con i vostri crediti!
             .setTitle('✨ NOVITÀ: Sistema di Crediti Ufficialmente Introdotto! ✨') 
             .setDescription(fullAnnouncementDescription) // Tutta la formattazione è gestita qui dentro
             .setTimestamp() // Aggiunge automaticamente la data e l'ora attuali nel footer
-            .setFooter({
-                text: 'Contattate lo staff per le ricariche.',
-                iconURL: 'https://i.imgur.com/Q2yD79a.png' // Icona di un punto interrogativo. Sostituisci se hai un URL migliore.
-            });
-
         // --- Invia l'Embed nel Canale ---
         await message.channel.send({ embeds: [ricaricaEmbed] })
             .catch(error => console.error('❌ Errore nell\'invio dell\'embed promo:', error));
