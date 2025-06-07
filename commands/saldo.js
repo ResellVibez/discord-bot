@@ -31,9 +31,7 @@ module.exports = {
 
         const embed = new EmbedBuilder()
             .setColor("#00FFFF")
-            .setDescription(
-                `💰 Saldo <span class="math-inline">\{userToShowBalance\.toString\(\)\}\: \*\*</span>{balance.toFixed(2)}${CURRENCY}**`,
-            );
+            .setDescription(`💰 Saldo ${userToShowBalance.toString()}: **${balance.toFixed(2)}${CURRENCY}**`);
 
         // Se l'utente è staff E ha menzionato qualcuno, elimina il suo comando
         if (targetUser && authorIsStaff) {
