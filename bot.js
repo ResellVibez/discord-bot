@@ -17,9 +17,14 @@ const client = new Client({
 
 // COLLEZIONE DEI COMANDI
 client.commands = new Collection();
+
 // DATABASE DEI CREDITI UTENTE (in memoria, verrà caricato/salvato da file)
 client.userCredits = {};
 const DATA_FILE = 'userCredits.json';
+
+// DATABASE DEI REFERRAL (in memoria, verrà caricato/salvato da file) <-- NUOVO
+client.referralData = {}; // Conterrà i codici referral e i referral effettuati
+const REFERRAL_DATA_FILE = 'referrals.json'; // Nome del file per i dati referral <-- NUOVO
 
 // --- Funzioni per la persistenza dei dati ---
 async function loadCredits() {
@@ -42,6 +47,43 @@ async function saveCredits() {
         // console.log('Crediti salvati su file.'); // Scommenta per debug
     } catch (error) {
         console.error('❌ Errore durante il salvataggio dei crediti:', error);
+    }
+}
+
+// --- Funzioni per la persistenza dei dati dei referral (NUOVE) ---
+async function loadReferralData() {
+    try {
+        const data = await fs.readFile(REFERRAL_DATA_FILE, 'utf8');
+        client.referralData = JSON.parse(data);
+        // Assicurati che le sottostrutture esistano per evitare errori successivi
+        client.referralData.referralCodes = client.referralData.referralCodes || {};
+        client.referralData.referredUsers = client.referralData.referredUsers || {};
+        console.log('✅ Dati referral caricati dal file.');
+    } catch (error) {
+        if (error.code === 'ENOENT') {
+            console.log('Nessun file di dati referral trovato, inizio con un database vuoto per i referral.');
+            // Inizializza con strutture vuote se il file non esiste
+            client.referralData = {
+                referralCodes: {},
+                referredUsers: {}
+            };
+        } else {
+            console.error('❌ Errore durante il caricamento dei dati referral:', error);
+            // Inizializza con strutture vuote in caso di errore di parsing/lettura
+            client.referralData = {
+                referralCodes: {},
+                referredUsers: {}
+            };
+        }
+    }
+}
+
+async function saveReferralData() {
+    try {
+        await fs.writeFile(REFERRAL_DATA_FILE, JSON.stringify(client.referralData, null, 2), 'utf8');
+        // console.log('💾 Dati referral salvati su file.'); // Scommenta per debug
+    } catch (error) {
+        console.error('❌ Errore durante il salvataggio dei dati referral:', error);
     }
 }
 
@@ -68,8 +110,9 @@ async function loadCommands() {
 
 // --- Eventi del Bot ---
 client.on("ready", async () => {
-    await loadCredits(); // Carica i crediti all'avvio
-    await loadCommands(); // Carica i comandi
+    await loadCredits();     // Carica i crediti all'avvio
+    await loadReferralData(); // Carica i dati referral all'avvio <-- NUOVO
+    await loadCommands();    // Carica i comandi
     console.log(`✅ Bot online come ${client.user.tag}`);
 });
 
@@ -85,9 +128,9 @@ client.on('messageCreate', async message => {
     if (!command) return;
 
     try {
-        // La logica di verifica permessi e l'eliminazione del messaggio
-        // (se desiderata per quel comando) è ora gestita ALL'INTERNO del file del comando specifico.
-        await command.execute(message, args, client, saveCredits, config);
+        // Passa le funzioni di salvataggio/caricamento e la configurazione ai comandi
+        // e anche il client per accedere a client.userCredits e client.referralData
+        await command.execute(message, args, client, saveCredits, saveReferralData, config); // <-- AGGIUNTO saveReferralData
     } catch (error) {
         console.error(`❌ Errore nell'esecuzione del comando ${commandName}:`, error);
         const errorEmbed = new EmbedBuilder()

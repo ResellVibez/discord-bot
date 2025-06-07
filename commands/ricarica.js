@@ -6,8 +6,8 @@ module.exports = {
         description: 'Ricarica i crediti di un utente con importi tier e bonus.',
         staffOnly: true, // Indica che è un comando solo per lo staff
     },
-    async execute(message, args, client, saveCredits, config) {
-        const { PREFIX, TIERED_AMOUNTS, BONUS_RATES, CURRENCY, STAFF_ROLES, ERROR_MESSAGE_TIMEOUT_MS } = config;
+    async execute(message, args, client, saveCredits, saveReferralData, config) {
+        const { PREFIX, TIERED_AMOUNTS, BONUS_RATES, CURRENCY, STAFF_ROLES, ERROR_MESSAGE_TIMEOUT_MS, REFERRAL_BONUS_AMOUNT } = config;
 
         // Verifica permessi staff (viene fatta qui per coerenza con il comando)
         const member = await message.guild.members.fetch(message.author.id).catch(() => null);
@@ -37,6 +37,32 @@ module.exports = {
         const total = amount * BONUS_RATES[amount];
         client.userCredits[targetUser.id] = (client.userCredits[targetUser.id] || 0) + total;
         await saveCredits(); // Salva i crediti dopo la modifica
+
+        // --- INIZIO: Logica Sistema Referral (NUOVO BLOCCO) ---
+        const referredUserData = client.referralData.referredUsers[targetUser.id]; // Ottieni i dati referral del "referred"
+
+        // Se l'utente è stato referrato E il bonus non è ancora stato erogato per lui
+        if (referredUserData && !referredUserData.hasTriggeredReward) {
+            const referrerId = referredUserData.referrerId; // ID di chi ha invitato
+            const referralBonus = REFERRAL_BONUS_AMOUNT; // L'importo del bonus referral da config.json
+
+            // Aggiungi il bonus crediti all'invitante (referrer)
+            client.userCredits[referrerId] = (client.userCredits[referrerId] || 0) + referralBonus;
+            await saveCredits(); // Salva i crediti aggiornati del referrer
+
+            // Marca il referral come "bonus già erogato"
+            referredUserData.hasTriggeredReward = true;
+            await saveReferralData(); // Salva lo stato aggiornato del referralData
+
+            // Notifica l'invitante (referrer) del bonus ricevuto
+            const referrerEmbed = new EmbedBuilder()
+                .setColor('#FFD700') // Colore oro per il bonus referral
+                .setDescription(`🎉 Complimenti <@${referrerId}>! Il tuo amico ${targetUser.toString()} ha fatto la sua **prima ricarica di ${amount}${CURRENCY}** e hai ricevuto **${referralBonus.toFixed(2)}${CURRENCY}** come bonus referral!`);
+
+            // Invia la notifica nel canale corrente dove è stato usato !ricarica
+            await message.channel.send({ embeds: [referrerEmbed] });
+        }
+        // --- FINE: Logica Sistema Referral ---
 
         const successEmbed = new EmbedBuilder()
             .setColor("#00FF00")
