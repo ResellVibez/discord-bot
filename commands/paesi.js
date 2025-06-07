@@ -11,11 +11,13 @@ module.exports = {
 
         // --- Verifica Permessi Staff ---
         const member = await message.guild.members.fetch(message.author.id).catch(() => null);
-        const isStaff = member && member.roles.cache.some(role => STAFF_ROLES.includes(role.name));
-        if (!isStaff) {
-            await message.delete().catch(() => {}); // Elimina il comando se non è staff
-            return; // Interrompe l'esecuzione del comando
-        }
+let isStaff = false; // Inizializza a false
+if (member) { // Aggiungi questo controllo!
+    isStaff = member.roles.cache.some(role => STAFF_ROLES.includes(role.name));
+}
+if (!isStaff) {
+    // ... logica per utenti non staff
+}
         // --- Fine Verifica Permessi Staff ---
 
         await message.delete().catch(() => {});
