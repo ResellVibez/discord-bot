@@ -73,7 +73,7 @@ client.on("ready", async () => {
     console.log(`✅ Bot online come ${client.user.tag}`);
 });
 
-client.on("messageCreate", async (message) => {
+client.on('messageCreate', async message => {
     if (message.author.bot) return;
     if (!message.content.startsWith(PREFIX)) return;
 
@@ -82,20 +82,18 @@ client.on("messageCreate", async (message) => {
 
     const command = client.commands.get(commandName);
 
-    if (!command) return; // Se il comando non esiste
+    if (!command) return;
 
-    // Passa le funzioni di salvataggio/caricamento e la configurazione ai comandi
-    // e anche il client per accedere a client.userCredits
     try {
+        // La logica di verifica permessi e l'eliminazione del messaggio
+        // (se desiderata per quel comando) è ora gestita ALL'INTERNO del file del comando specifico.
         await command.execute(message, args, client, saveCredits, config);
     } catch (error) {
-        console.error(`❌ Errore durante l'esecuzione del comando ${commandName}:`, error);
+        console.error(`❌ Errore nell'esecuzione del comando ${commandName}:`, error);
         const errorEmbed = new EmbedBuilder()
             .setColor("#FF0000")
-            .setDescription("❌ Si è verificato un errore durante l'esecuzione di questo comando!");
-        await message.reply({ embeds: [errorEmbed], ephemeral: true })
-            .then((msg) => setTimeout(() => msg.delete().catch(() => {}), config.ERROR_MESSAGE_TIMEOUT_MS))
-            .catch(() => {}); // Gestisce l'errore se il messaggio non può essere eliminato
+            .setDescription(`❌ Si è verificato un errore durante l'esecuzione di questo comando.`);
+        await message.reply({ embeds: [errorEmbed] }).catch(() => {});
     }
 });
 
