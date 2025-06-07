@@ -33,11 +33,11 @@ module.exports = {
         const embed = new EmbedBuilder()
             .setColor('#00FF00') // Verde per successo/informazione
             .setTitle('🔗 Il Tuo Codice di Invito Personale!')
-            .setDescription(
+            .setDescription( // <-- ASSICURATI CHE QUESTA STRINGA SIA TRA BACKTICK
                 `Condividi questo codice con i tuoi amici per farli entrare in ShipX!\n\n` +
                 `**Il tuo codice:** \`${userReferralCode}\`\n\n` +
                 `Quando un tuo amico userà il tuo codice con \`${PREFIX}referral ${userReferralCode}\` e farà la sua **prima ricarica**, tu riceverai un bonus di **<span class="math-inline">\{config\.REFERRAL\_BONUS\_AMOUNT\.toFixed\(2\)\}</span>{config.CURRENCY}**!`
-            )
+            ) // <-- E CHE FINISCA CON UN BACKTICK
             .setFooter({ text: 'Incentiva i tuoi amici a unirsi e a ricaricare per guadagnare!' });
 
         // Invia l'embed al canale
