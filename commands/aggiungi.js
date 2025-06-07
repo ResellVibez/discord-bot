@@ -10,10 +10,7 @@ module.exports = {
         const { PREFIX, CURRENCY, STAFF_ROLES, ERROR_MESSAGE_TIMEOUT_MS } = config;
 
         const member = await message.guild.members.fetch(message.author.id).catch(() => null);
-        let isStaff = false; // Inizializza a false
-        if (member) { // Aggiungi questo controllo!
-            isStaff = member.roles.cache.some(role => STAFF_ROLES.includes(role.name));
-        }
+        const isStaff = member && member.roles.cache.some(role => STAFF_ROLES.includes(role.name));
         if (!isStaff) {
             await message.delete().catch(() => {});
             return;

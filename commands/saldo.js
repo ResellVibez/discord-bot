@@ -9,12 +9,7 @@ module.exports = {
         const { CURRENCY, STAFF_ROLES, ERROR_MESSAGE_TIMEOUT_MS } = config;
 
         const targetUser = message.mentions.users.first();
-
-        // NUOVA LOGICA: Inizializza a false e poi controlla se message.member esiste
-        let authorIsStaff = false;
-        if (message.member) { // Aggiungi questo controllo!
-            authorIsStaff = message.member.roles.cache.some(role => STAFF_ROLES.includes(role.name));
-        }
+        const authorIsStaff = message.member && message.member.roles.cache.some(role => STAFF_ROLES.includes(role.name));
 
         // Logica: se un utente è menzionato E l'autore del messaggio NON è staff
         if (targetUser && !authorIsStaff) {
