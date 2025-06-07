@@ -38,7 +38,6 @@ module.exports = {
             .setTimestamp()
             .setFooter({
                 text: 'Controlla sempre il canale destinazioni per aggiornamenti!',
-                iconURL: client.user.displayAvatarURL() // Ho usato l'icona del bot come footer, per coerenza
             });
 
         await message.channel.send({ embeds: [paesiEmbed] })
