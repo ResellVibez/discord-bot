@@ -33,13 +33,13 @@ module.exports = {
                 `💰 Saldo ${userToShowBalance.toString()}: **${balance.toFixed(2)}${CURRENCY}**`,
             );
 
-        // *** IMPORTANTE: Invia l'embed con il saldo PRIMA di eliminare il messaggio ***
-        await message.reply({ embeds: [embed] });
+        // *** MODIFICA QUI: Invece di reply, usa channel.send ***
+        await message.channel.send({ embeds: [embed] });
 
         // Se l'utente è staff E ha menzionato qualcuno, elimina il suo comando ORIGINALE
         if (targetUser && authorIsStaff) {
              await message.delete().catch(() => {});
         }
-        // Per !saldo (senza menzione), il messaggio originale non viene eliminato, resta visibile a chi lo ha digitato.
+        // Per !saldo (senza menzione), il messaggio originale non viene eliminato.
     },
 };
