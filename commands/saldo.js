@@ -9,6 +9,7 @@ module.exports = {
         const { CURRENCY, STAFF_ROLES, ERROR_MESSAGE_TIMEOUT_MS } = config;
 
         const targetUser = message.mentions.users.first();
+        // Controllo Staff (versione originale, meno robusta delle ultime modifiche)
         const authorIsStaff = message.member && message.member.roles.cache.some(role => STAFF_ROLES.includes(role.name));
 
         // Logica: se un utente è menzionato E l'autore del messaggio NON è staff
@@ -36,8 +37,7 @@ module.exports = {
         // Invia l'embed con il saldo
         await message.channel.send({ embeds: [embed] });
 
-        // *** MODIFICA QUI: Elimina il messaggio del comando originale per TUTTI i casi di !saldo ***
-        // Questa riga farà sì che sia !saldo che !saldo @utente vengano eliminati.
+        // Elimina il messaggio del comando originale per TUTTI i casi di !saldo
         await message.delete().catch(() => {}); 
     },
 };

@@ -3,52 +3,55 @@ const { EmbedBuilder } = require("discord.js");
 module.exports = {
     data: {
         name: 'ricarica',
-        description: 'Ricarica i crediti di un utente con importi tier e bonus.',
-        staffOnly: true, // Indica che è un comando solo per lo staff
+        description: 'Aggiunge un importo ricaricato ai crediti di un utente.', // Descrizione originale
+        staffOnly: true,
     },
     async execute(message, args, client, saveCredits, config) {
         const { PREFIX, TIERED_AMOUNTS, BONUS_RATES, CURRENCY, STAFF_ROLES, ERROR_MESSAGE_TIMEOUT_MS } = config;
 
-        // Verifica permessi staff (viene fatta qui per coerenza con il comando)
+        // Controllo Staff (versione originale, meno robusta delle ultime modifiche)
         const member = await message.guild.members.fetch(message.author.id).catch(() => null);
         const isStaff = member && member.roles.cache.some(role => STAFF_ROLES.includes(role.name));
         if (!isStaff) {
-            await message.delete().catch(() => {}); // Elimina il comando se non è staff
+            await message.delete().catch(() => {});
             return;
         }
 
-        // Elimina sempre il comando dello staff
         await message.delete().catch(() => {});
 
         const targetUser = message.mentions.users.first();
         const amount = parseFloat(args[1]);
 
-        if (!targetUser || !amount || !TIERED_AMOUNTS.includes(amount)) {
+        if (!targetUser || isNaN(amount) || amount <= 0 || !TIERED_AMOUNTS.includes(amount)) {
             const errorEmbed = new EmbedBuilder()
                 .setColor("#FF0000")
                 .setDescription(
-                    `❌ **Formato errato!** Usa: \`${PREFIX}ricarica @utente 50\`\n**Importi validi:** ${TIERED_AMOUNTS.join(", ")}`,
+                    `❌ **Formato errato!** Usa: \`${PREFIX}ricarica @utente <importo>\`\nImporti validi: ${TIERED_AMOUNTS.join(", ")} ${CURRENCY}`,
                 );
             return message.channel
                 .send({ embeds: [errorEmbed] })
                 .then((msg) => setTimeout(() => msg.delete().catch(() => {}), ERROR_MESSAGE_TIMEOUT_MS));
         }
 
-        const total = amount * BONUS_RATES[amount];
-        client.userCredits[targetUser.id] = (client.userCredits[targetUser.id] || 0) + total;
-        await saveCredits(); // Salva i crediti dopo la modifica
+        // Applica il bonus in base all'importo della ricarica
+        const bonusRate = BONUS_RATES[amount] || 1; // Se non c'è un bonus specifico, è 1 (nessun bonus)
+        const finalAmount = amount * bonusRate;
+
+        // Aggiungi i crediti all'utente target
+        client.userCredits[targetUser.id] = (client.userCredits[targetUser.id] || 0) + finalAmount;
+        await saveCredits(); // Salva i crediti dopo la ricarica
 
         const successEmbed = new EmbedBuilder()
             .setColor("#00FF00")
             .setDescription(
-                `✅ ${targetUser.toString()} ha ricevuto **${total.toFixed(2)}${CURRENCY}** (${amount}${CURRENCY} + ${((BONUS_RATES[amount] - 1) * 100).toFixed(0)}% bonus)`,
+                `✅ Ricarica completata per ${targetUser.toString()}: **${finalAmount.toFixed(2)}${CURRENCY}**`,
             )
-            .addFields({
-                name: "Nuovo saldo",
-                value: `${client.userCredits[targetUser.id].toFixed(2)}${CURRENCY}`,
-                inline: true,
-            });
+            .addFields(
+                { name: "Importo ricaricato", value: `${amount.toFixed(2)}${CURRENCY}`, inline: true },
+                { name: "Bonus applicato", value: `${((bonusRate - 1) * 100).toFixed(0)}%`, inline: true },
+                { name: "Nuovo saldo", value: `${client.userCredits[targetUser.id].toFixed(2)}${CURRENCY}`, inline: false }
+            );
 
-        return message.channel.send({ embeds: [successEmbed] });
+        await message.channel.send({ embeds: [successEmbed] });
     },
 };
