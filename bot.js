@@ -1,86 +1,126 @@
-const { Client, GatewayIntentBits, Collection } = require('discord.js');
+require('dotenv').config();
+
 const fs = require('fs');
 const path = require('path');
-
-// Carica la configurazione
+const { Client, Collection, GatewayIntentBits } = require('discord.js');
 const config = require('./config.json');
-const { PREFIX, STAFF_ROLES, CURRENCY } = config;
+const DataStore = require('./dataStore');
+
+// Verifica variabili d’ambiente
+const requiredEnvs = ['DISCORD_TOKEN'];
+for (const v of requiredEnvs) {
+  if (!process.env[v]) {
+    console.error(`Errore: variabile d'ambiente ${v} non impostata.`);
+    process.exit(1);
+  }
+}
 
 const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers,
-    ],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
 });
 
+// Collezioni comandi e memoria
 client.commands = new Collection();
-client.userCredits = {}; // Qui verranno memorizzati i crediti degli utenti
-
-const creditsFilePath = path.join(__dirname, 'userCredits.json');
-
-// Funzione per caricare i crediti
-const loadCredits = () => {
-    if (fs.existsSync(creditsFilePath)) {
-        const data = fs.readFileSync(creditsFilePath, 'utf8');
-        try {
-            client.userCredits = JSON.parse(data);
-            console.log('✅ Crediti caricati dal file.');
-        } catch (error) {
-            console.error('❌ Errore durante il parsing dei crediti, inizializzo a vuoto:', error);
-            client.userCredits = {};
-        }
-    } else {
-        console.log('⚠️ File crediti.json non trovato, inizializzo i crediti a vuoto.');
-        client.userCredits = {};
-    }
-};
-
-// Funzione per salvare i crediti
-const saveCredits = async () => {
-    fs.writeFileSync(creditsFilePath, JSON.stringify(client.userCredits, null, 2), 'utf8');
-    console.log('💾 Crediti salvati sul file.');
-};
+client.dataStore = new DataStore();
 
 // Carica i comandi
 const commandsPath = path.join(__dirname, 'commands');
-const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
-
-for (const file of commandFiles) {
-    const filePath = path.join(commandsPath, file);
-    const command = require(filePath);
-    if (command.data && command.execute) {
-        client.commands.set(command.data.name, command);
+fs.readdirSync(commandsPath)
+  .filter(file => file.endsWith('.js'))
+  .forEach(file => {
+    const command = require(path.join(commandsPath, file));
+    if (command.data && typeof command.execute === 'function') {
+      client.commands.set(command.data.name, command);
     } else {
-        console.log(`[WARNING] Il comando a ${filePath} manca di una proprietà "data" o "execute" richiesta.`);
+      console.warn(`[WARN] Il file ${file} non esporta correttamente data/execute.`);
     }
+  });
+
+async function guardAndDelete(message, staffOnly = false) {
+  try { await message.delete(); } catch {}
+  if (staffOnly) {
+    const hasRole = config.ADMIN_ROLES_IDS.some(r => message.member.roles.cache.has(r));
+    if (!hasRole) throw new Error('NO_PERMISSION');
+  }
 }
 
 client.once('ready', async () => {
-    console.log(`✅ Bot online come ${client.user.tag}`);
-    loadCredits(); // Carica i crediti all'avvio
+  console.log(`${client.user.tag} è online!`);
+
+  // ✅ Carica referral e separa i dati in modo corretto
+  const allReferralData = await client.dataStore.getReferrals();
+  client.referralCodes = allReferralData.codes || {};
+  client.referredUsers = allReferralData.referredUsers || {};
+
+  // Altri dati
+  client.userCredits = await client.dataStore.getUserCredits();
+  client.userFreeShippings = await client.dataStore.getFreeShippings();
+  client.transactions = await client.dataStore.getTransactions();
 });
 
+
+
+// Comandi a prefisso (!)
 client.on('messageCreate', async message => {
-    if (message.author.bot) return; // Ignora i messaggi dei bot
+  if (message.author.bot || !message.content.startsWith(config.PREFIX)) return;
+  const args = message.content.slice(config.PREFIX.length).trim().split(/\s+/);
+  const cmdName = args.shift().toLowerCase();
+  const command = client.commands.get(cmdName);
+  if (!command) return;
 
-    // Ignora i messaggi senza il prefisso
-    if (!message.content.startsWith(PREFIX)) return;
-
-    const args = message.content.slice(PREFIX.length).trim().split(/ +/);
-    const commandName = args.shift().toLowerCase();
-
-    const command = client.commands.get(commandName);
-
-    if (!command) return;
-
-    try {
-        await command.execute(message, args, client, saveCredits, config);
-    } catch (error) {
-        console.error(`❌ Errore nell'esecuzione del comando ${commandName}:`, error);
-        await message.reply('Si è verificato un errore durante l\'esecuzione di questo comando.');
+  try {
+    await guardAndDelete(message, command.data.staffOnly);
+    await command.execute({
+  message,
+  args,
+  client,
+  config,
+  dataStore: client.dataStore, // 👉 AGGIUNGI QUESTO
+  saveCredits: client.dataStore.setUserCredits?.bind(client.dataStore),
+  saveReferralData: client.dataStore.setReferrals?.bind(client.dataStore),
+  saveFreeShippings: client.dataStore.setFreeShippings?.bind(client.dataStore),
+  saveTransactions: client.dataStore.setTransactions?.bind(client.dataStore),
+});
+  } catch (err) {
+    if (err.message === 'NO_PERMISSION') {
+      return message.channel
+        .send('❌ Non hai i permessi necessari.')
+        .then(m => setTimeout(() => m.delete().catch(), config.ERROR_MESSAGE_TIMEOUT_MS));
     }
+    console.error(err);
+  }
 });
 
-client.login(process.env.DISCORD_BOT_TOKEN);
+// Comandi Slash (/)
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isCommand()) return;
+  const command = client.commands.get(interaction.commandName);
+  if (!command) return;
+
+  try {
+    await command.execute({
+  interaction,
+  client,
+  config,
+  dataStore: client.dataStore, // 👉 QUESTA È LA RIGA MANCANTE
+  saveCredits: client.dataStore.setUserCredits?.bind(client.dataStore),
+  saveReferralData: client.dataStore.setReferrals?.bind(client.dataStore),
+  saveFreeShippings: client.dataStore.setFreeShippings?.bind(client.dataStore),
+  saveTransactions: client.dataStore.setTransactions?.bind(client.dataStore),
+});
+  } catch (err) {
+    console.error(err);
+    const reply = { content: '⚠️ Si è verificato un errore interno.', ephemeral: true };
+    if (interaction.deferred || interaction.replied) {
+      await interaction.followUp(reply);
+    } else {
+      await interaction.reply(reply);
+    }
+  }
+});
+
+client.login(process.env.DISCORD_TOKEN);

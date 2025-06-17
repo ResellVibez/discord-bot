@@ -1,11 +1,19 @@
 {
-  "name": "discord-bot",
+  "name": "creditbot",
   "version": "1.0.0",
+  "description": "Un bot Discord per la gestione di crediti e referral.",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
-    "discord.js": "^14.12.1"
+    "@discordjs/rest": "^2.5.0",
+    "chalk": "^5.4.1",
+    "discord-api-types": "^0.38.11",
+    "discord.js": "^14.15.3",
+    "dotenv": "^16.4.5"
   }
 }
