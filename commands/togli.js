@@ -1,62 +1,66 @@
-const { EmbedBuilder } = require("discord.js");
+const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, MessageFlags } = require("discord.js");
 
 module.exports = {
-    data: {
-        name: 'togli',
-        description: 'Toglie un importo specifico dai crediti di un utente.',
-        staffOnly: true,
-    },
-    async execute(message, args, client, saveCredits, config) {
-        const { PREFIX, CURRENCY, STAFF_ROLES, ERROR_MESSAGE_TIMEOUT_MS } = config;
+  data: new SlashCommandBuilder()
+    .setName('togli')
+    .setDescription('Toglie un importo specifico dai crediti di un utente.')
+    .addUserOption(option =>
+      option.setName('utente')
+        .setDescription('L\'utente a cui togliere i crediti.')
+        .setRequired(true)
+    )
+    .addNumberOption(option =>
+      option.setName('importo')
+        .setDescription('L\'importo da togliere.')
+        .setRequired(true)
+        .setMinValue(0.01)
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-        const member = await message.guild.members.fetch(message.author.id).catch(() => null);
-        const isStaff = member && member.roles.cache.some(role => STAFF_ROLES.includes(role.name));
-        if (!isStaff) {
-            await message.delete().catch(() => {});
-            return;
-        }
+  async execute({ interaction, client, config, saveCredits }) {
+    const { CURRENCY, ADMIN_ROLES_IDS = [] } = config;
 
-        await message.delete().catch(() => {});
+    const member = interaction.member;
+    const userRoles = member.roles.cache.map(role => role.id);
+    const isAuthorized = ADMIN_ROLES_IDS.some(id => userRoles.includes(id));
 
-        const targetUser = message.mentions.users.first();
-        const amount = parseFloat(args[1]);
+    if (!isAuthorized) {
+      return interaction.reply({
+        content: "❌ Non hai i permessi per usare questo comando.",
+        flags: MessageFlags.Ephemeral
+      });
+    }
 
-        if (!targetUser || isNaN(amount) || amount <= 0) {
-            const errorEmbed = new EmbedBuilder()
-                .setColor("#FF0000")
-                .setDescription(
-                    `❌ **Formato errato!** Usa: \`${PREFIX}togli @utente 10\`\nImporto deve essere un numero positivo`,
-                );
-            return message.channel
-                .send({ embeds: [errorEmbed] })
-                .then((msg) => setTimeout(() => msg.delete().catch(() => {}), ERROR_MESSAGE_TIMEOUT_MS));
-        }
+    const targetUser = interaction.options.getUser('utente');
+    const amount = interaction.options.getNumber('importo');
 
-        if ((client.userCredits[targetUser.id] || 0) < amount) {
-            const errorEmbed = new EmbedBuilder()
-                .setColor("#FF0000")
-                .setDescription(
-                    `❌ **Credito insufficiente!**\nSaldo attuale: **${(client.userCredits[targetUser.id] || 0).toFixed(2)}${CURRENCY}**`,
-                );
-            return message.channel
-                .send({ embeds: [errorEmbed] })
-                .then((msg) => setTimeout(() => msg.delete().catch(() => {}), ERROR_MESSAGE_TIMEOUT_MS));
-        }
+    const currentBalance = client.userCredits[targetUser.id] || 0;
 
-        client.userCredits[targetUser.id] -= amount;
-        await saveCredits(); // Salva i crediti dopo la modifica
-
-        const successEmbed = new EmbedBuilder()
-            .setColor("#FFA500")
+    if (currentBalance < amount) {
+      return interaction.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor("#FF0000")
             .setDescription(
-                `📦 **Tolti ${amount.toFixed(2)}${CURRENCY}** da ${targetUser.toString()}`,
+              `❌ **Credito insufficiente!**\nSaldo attuale: **${currentBalance.toFixed(2)}${CURRENCY}**`
             )
-            .addFields({
-                name: "Nuovo saldo",
-                value: `${client.userCredits[targetUser.id].toFixed(2)}${CURRENCY}`,
-                inline: true,
-            });
+        ],
+        flags: MessageFlags.Ephemeral
+      });
+    }
 
-        return message.channel.send({ embeds: [successEmbed] });
-    },
+    client.userCredits[targetUser.id] = currentBalance - amount;
+    await saveCredits(client.userCredits);
+
+    const embed = new EmbedBuilder()
+      .setColor("#FFA500")
+      .setDescription(`📦 **Tolti ${amount.toFixed(2)}${CURRENCY}** da ${targetUser.toString()}`)
+      .addFields({
+        name: "Nuovo saldo",
+        value: `${client.userCredits[targetUser.id].toFixed(2)}${CURRENCY}`,
+        inline: true
+      });
+
+    return interaction.reply({ embeds: [embed] });
+  }
 };

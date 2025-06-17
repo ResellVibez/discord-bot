@@ -1,43 +1,51 @@
-const { EmbedBuilder } = require("discord.js");
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
-    data: {
-        name: 'saldo',
-        description: 'Mostra il saldo dei crediti tuo o di un altro utente.',
-    },
-    async execute(message, args, client, saveCredits, config) {
-        const { CURRENCY, STAFF_ROLES, ERROR_MESSAGE_TIMEOUT_MS } = config;
+  data: new SlashCommandBuilder()
+    .setName('saldo')
+    .setDescription('Mostra il tuo saldo crediti o quello di un altro utente (solo admin).')
+    .addUserOption(option =>
+      option.setName('utente')
+        .setDescription('Utente di cui visualizzare il saldo (solo admin)')
+        .setRequired(false)
+    )
+    .setDMPermission(false),
 
-        const targetUser = message.mentions.users.first();
-        // Controllo Staff (versione originale, meno robusta delle ultime modifiche)
-        const authorIsStaff = message.member && message.member.roles.cache.some(role => STAFF_ROLES.includes(role.name));
+  async execute({ interaction, client, config }) {
+    const { CURRENCY, ADMIN_ROLES_IDS = [] } = config;
 
-        // Logica: se un utente è menzionato E l'autore del messaggio NON è staff
-        if (targetUser && !authorIsStaff) {
-            await message.delete().catch(() => {}); // Elimina il comando dell'utente non autorizzato
-            const errorEmbed = new EmbedBuilder()
-                .setColor("#FF0000")
-                .setDescription("❌ Non hai il permesso di visualizzare il saldo di altri utenti.");
-            
-            return message.channel.send({ embeds: [errorEmbed] })
-                .then(msg => setTimeout(() => msg.delete().catch(() => {}), ERROR_MESSAGE_TIMEOUT_MS))
-                .catch(() => {});
-        }
+    const invoker = interaction.user;
+    const target = interaction.options.getUser('utente');
+    const guild = interaction.guild;
+    let userToShow = invoker;
+    let isAdmin = false;
 
-        // Determina quale utente mostrare il saldo: quello menzionato o l'autore del messaggio
-        const userToShowBalance = targetUser || message.author;
-        const balance = client.userCredits[userToShowBalance.id] || 0;
+    try {
+      const member = await guild.members.fetch(invoker.id);
+      const userRoleIds = member.roles.cache.map(role => role.id);
+      isAdmin = ADMIN_ROLES_IDS.some(id => userRoleIds.includes(id));
+    } catch (err) {
+      console.warn('⚠️ Errore durante il controllo dei ruoli:', err);
+    }
 
-        const embed = new EmbedBuilder()
-            .setColor("#00FFFF")
-            .setDescription(
-                `💰 Saldo ${userToShowBalance.toString()}: **${balance.toFixed(2)}${CURRENCY}**`,
-            );
+    if (target && target.id !== invoker.id && !isAdmin) {
+      return interaction.reply({
+        content: '❌ Non hai i permessi per visualizzare il saldo di altri utenti.',
+        flags: 64
+      });
+    }
 
-        // Invia l'embed con il saldo
-        await message.channel.send({ embeds: [embed] });
+    userToShow = target || invoker;
+    const balance = client.userCredits[userToShow.id] || 0;
 
-        // Elimina il messaggio del comando originale per TUTTI i casi di !saldo
-        await message.delete().catch(() => {}); 
-    },
+    const embed = new EmbedBuilder()
+      .setColor('#00BFFF')
+      .setTitle('💰 Saldo Crediti')
+      .setDescription(`${userToShow} ha **${balance.toFixed(2)}${CURRENCY}** disponibili.`);
+
+    await interaction.reply({
+      embeds: [embed],
+      flags: 64
+    });
+  }
 };

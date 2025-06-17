@@ -1,57 +1,128 @@
-const { EmbedBuilder } = require("discord.js");
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 
 module.exports = {
-    data: {
-        name: 'ricarica',
-        description: 'Aggiunge un importo ricaricato ai crediti di un utente.', // Descrizione originale
-        staffOnly: true,
-    },
-    async execute(message, args, client, saveCredits, config) {
-        const { PREFIX, TIERED_AMOUNTS, BONUS_RATES, CURRENCY, STAFF_ROLES, ERROR_MESSAGE_TIMEOUT_MS } = config;
+  data: new SlashCommandBuilder()
+    .setName('ricarica')
+    .setDescription('Aggiunge crediti a un utente con bonus e gestisce eventuale bonus referral.')
+    .addUserOption(option =>
+      option.setName('utente')
+        .setDescription('Utente a cui aggiungere i crediti')
+        .setRequired(true)
+    )
+    .addNumberOption(option =>
+      option.setName('importo')
+        .setDescription('Importo da ricaricare (es: 15, 30, 50...)')
+        .setRequired(true)
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .setDMPermission(false),
 
-        // Controllo Staff (versione originale, meno robusta delle ultime modifiche)
-        const member = await message.guild.members.fetch(message.author.id).catch(() => null);
-        const isStaff = member && member.roles.cache.some(role => STAFF_ROLES.includes(role.name));
-        if (!isStaff) {
-            await message.delete().catch(() => {});
-            return;
-        }
+  async execute({ interaction, client, config, dataStore }) {
+    const {
+      TIERED_AMOUNTS,
+      BONUS_RATES,
+      CURRENCY,
+      REFERRAL_BONUS_FOR_RECHARGE,
+      MIN_RECHARGE_FOR_REFERRAL_BONUS,
+      MAX_RECHARGE_AMOUNT
+    } = config;
 
-        await message.delete().catch(() => {});
+    const targetUser = interaction.options.getUser('utente');
+    const amount = interaction.options.getNumber('importo');
 
-        const targetUser = message.mentions.users.first();
-        const amount = parseFloat(args[1]);
+    if (!TIERED_AMOUNTS.includes(amount)) {
+      return interaction.reply({
+        content: `❌ Importo non valido. Sono ammessi solo: ${TIERED_AMOUNTS.join(', ')} ${CURRENCY}`,
+        ephemeral: true
+      });
+    }
 
-        if (!targetUser || isNaN(amount) || amount <= 0 || !TIERED_AMOUNTS.includes(amount)) {
-            const errorEmbed = new EmbedBuilder()
-                .setColor("#FF0000")
-                .setDescription(
-                    `❌ **Formato errato!** Usa: \`${PREFIX}ricarica @utente <importo>\`\nImporti validi: ${TIERED_AMOUNTS.join(", ")} ${CURRENCY}`,
-                );
-            return message.channel
-                .send({ embeds: [errorEmbed] })
-                .then((msg) => setTimeout(() => msg.delete().catch(() => {}), ERROR_MESSAGE_TIMEOUT_MS));
-        }
+    if (amount > MAX_RECHARGE_AMOUNT) {
+      return interaction.reply({
+        content: `❌ Importo troppo alto. Max consentito: ${MAX_RECHARGE_AMOUNT}${CURRENCY}`,
+        ephemeral: true
+      });
+    }
 
-        // Applica il bonus in base all'importo della ricarica
-        const bonusRate = BONUS_RATES[amount] || 1; // Se non c'è un bonus specifico, è 1 (nessun bonus)
-        const finalAmount = amount * bonusRate;
+    const userId = targetUser.id;
+    const bonusRate = BONUS_RATES[amount.toString()] || 1;
+    const finalAmount = amount * bonusRate;
 
-        // Aggiungi i crediti all'utente target
-        client.userCredits[targetUser.id] = (client.userCredits[targetUser.id] || 0) + finalAmount;
-        await saveCredits(); // Salva i crediti dopo la ricarica
+    const userCredits = await dataStore.getUserCredits();
+    userCredits[userId] = (userCredits[userId] || 0) + finalAmount;
+    const newBalance = userCredits[userId];
+    await dataStore.setUserCredits(userCredits);
+    client.userCredits = userCredits; // ✅ Sincronizza la cache locale
 
-        const successEmbed = new EmbedBuilder()
-            .setColor("#00FF00")
+    const referrals = await dataStore.getReferrals();
+    const referredInfo = referrals.referredUsers?.[userId];
+    let bonusMessage = '';
+    let referralBonusGiven = false;
+
+    if (referredInfo && !referredInfo.bonusGiven && amount >= MIN_RECHARGE_FOR_REFERRAL_BONUS) {
+      const referrerId = referredInfo.referrerId;
+      const referrerUser = await client.users.fetch(referrerId).catch(() => null);
+
+      if (referrerUser) {
+        userCredits[referrerId] = (userCredits[referrerId] || 0) + REFERRAL_BONUS_FOR_RECHARGE;
+        await dataStore.setUserCredits(userCredits);
+        client.userCredits = userCredits; // ✅ Aggiorna anche cache referrer
+
+        referrals.referredUsers[userId].bonusGiven = true;
+        await dataStore.setReferrals(referrals);
+
+        try {
+          const refEmbed = new EmbedBuilder()
+            .setColor('Gold')
+            .setTitle('🎉 Bonus Referral Ricevuto!')
             .setDescription(
-                `✅ Ricarica completata per ${targetUser.toString()}: **${finalAmount.toFixed(2)}${CURRENCY}**`,
-            )
-            .addFields(
-                { name: "Importo ricaricato", value: `${amount.toFixed(2)}${CURRENCY}`, inline: true },
-                { name: "Bonus applicato", value: `${((bonusRate - 1) * 100).toFixed(0)}%`, inline: true },
-                { name: "Nuovo saldo", value: `${client.userCredits[targetUser.id].toFixed(2)}${CURRENCY}`, inline: false }
+              `Hai ricevuto **${REFERRAL_BONUS_FOR_RECHARGE.toFixed(2)}${CURRENCY}** perché ${targetUser.username} ha ricaricato almeno ${MIN_RECHARGE_FOR_REFERRAL_BONUS}${CURRENCY}.`
             );
 
-        await message.channel.send({ embeds: [successEmbed] });
-    },
+          await referrerUser.send({ embeds: [refEmbed] });
+          bonusMessage = `\n🎁 Bonus Referral assegnato a ${referrerUser.tag}`;
+          referralBonusGiven = true;
+        } catch {
+          bonusMessage = `\n⚠️ Bonus assegnato a ${referrerUser.tag}, ma non è stato possibile inviargli un DM.`;
+          referralBonusGiven = true;
+        }
+      }
+    }
+
+    const successEmbed = new EmbedBuilder()
+      .setColor('Green')
+      .setTitle('💳 Ricarica Completata')
+      .setDescription(
+        `✅ ${targetUser} ha ricevuto **${finalAmount.toFixed(2)}${CURRENCY}**!\n` +
+        `➕ Importo: ${amount.toFixed(2)}${CURRENCY}\n` +
+        `✨ Bonus: ${((bonusRate - 1) * 100).toFixed(0)}%` +
+        bonusMessage
+      )
+      .addFields({
+        name: '💰 Saldo attuale',
+        value: `${newBalance.toFixed(2)}${CURRENCY}`,
+        inline: false
+      });
+
+    await interaction.reply({ embeds: [successEmbed] });
+
+    const transactions = await dataStore.getTransactions();
+    const transactionId = `${Date.now()}-${userId}`;
+
+    transactions[transactionId] = {
+      timestamp: new Date().toISOString(),
+      staffId: interaction.user.id,
+      staffUsername: interaction.user.tag,
+      userId: userId,
+      username: targetUser.tag,
+      rechargeAmount: amount,
+      finalAmountAdded: finalAmount,
+      bonusRate: (bonusRate - 1),
+      referralBonusGiven: referralBonusGiven,
+      referrerId: referralBonusGiven ? referredInfo?.referrerId : null,
+      referralBonusAmount: referralBonusGiven ? REFERRAL_BONUS_FOR_RECHARGE : 0
+    };
+
+    await dataStore.setTransactions(transactions);
+  }
 };
