@@ -36,9 +36,7 @@ module.exports = {
           `⚙️ **Comandi Utili:**\n` +
           // Qui aggiorniamo il comando da "!" a "/"
           `• \`/saldo\` → Visualizza il tuo saldo crediti\n` +
-          `• \`/ricarica <utente> <quantità>\` (Solo Admin) → Aggiungi crediti a un utente\n` +
-          `• \`/set_saldo <utente> <quantità>\` (Solo Admin) → Imposta il saldo di un utente\n\n` +
-
+         
 
           `🗣️ **Hai proposte o idee?**\n` +
           `La tua opinione è fondamentale! Apri un ticket sul server e condividi i tuoi suggerimenti per migliorare il sistema!\n\n` +
