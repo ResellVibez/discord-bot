@@ -2,7 +2,7 @@ const {
     SlashCommandBuilder,
     PermissionFlagsBits,
     EmbedBuilder,
-    MessageFlags // Mantenuto per il riferimento a `ephemeral: true`
+    MessageFlags
 } = require("discord.js");
 
 module.exports = {
@@ -24,14 +24,13 @@ module.exports = {
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
         .setDMPermission(false),
 
-    async execute({ interaction, client, config, dataStore }) { // Aggiunto dataStore
+    async execute({ interaction, client, config, dataStore }) {
         const { CURRENCY } = config;
         const DEFAULT_LIMIT = 5;
-        const targetUser = interaction.options.getUser("utente"); // Utente per cui filtrare
+        const targetUser = interaction.options.getUser("utente");
         const limit = interaction.options.getInteger("limite") || DEFAULT_LIMIT;
 
         try {
-            // Prepara la query base per le transazioni
             let query = `
                 SELECT
                     id, user_id, type, amount, description, timestamp
@@ -43,11 +42,6 @@ module.exports = {
             let paramIndex = 1;
 
             if (targetUser) {
-                // Filtra per user_id. La tua implementazione originale filtrava su tx.targetUserId, tx.userId, tx.staffId, tx.referrerId.
-                // Nel nuovo schema 'transactions', 'user_id' è la colonna principale per l'utente coinvolto.
-                // Se hai bisogno di filtrare per staff_id o referrer_id in transazioni specifiche,
-                // dovrai aggiungere quelle colonne alla tabella transactions o adattare la logica qui.
-                // Per semplicità, ipotizziamo che 'user_id' sia l'utente principale della transazione.
                 whereClauses.push(`user_id = $${paramIndex++}`);
                 queryParams.push(targetUser.id);
             }
@@ -56,17 +50,17 @@ module.exports = {
                 query += ` WHERE ` + whereClauses.join(' AND ');
             }
 
-            query += ` ORDER BY timestamp DESC LIMIT $${paramIndex++};`; // Ordina per data decrescente e limita
+            query += ` ORDER BY timestamp DESC LIMIT $${paramIndex++};`;
             queryParams.push(limit);
 
             const result = await dataStore.db.query(query, queryParams);
-            const transactionsToShow = result.rows; // Le transazioni ottenute dal DB
+            const transactionsToShow = result.rows;
 
             if (transactionsToShow.length === 0) {
                 const noTxEmbed = new EmbedBuilder()
                     .setColor("#FFD700")
                     .setDescription(`⚠️ Nessuna transazione trovata${targetUser ? ` per ${targetUser.tag}` : ''}.`);
-                return interaction.reply({ embeds: [noTxEmbed], ephemeral: true }); // flags: 64 è deprecato
+                return interaction.reply({ embeds: [noTxEmbed], ephemeral: true });
             }
 
             const embed = new EmbedBuilder()
@@ -83,37 +77,33 @@ module.exports = {
                 let title = `Transazione`;
                 let description = ``;
 
-                // Adatta la descrizione in base al 'type' della transazione
-                // Assicurati che i 'type' siano coerenti con quelli salvati da addTransaction
+                // *** MODIFICA QUI: Parsa tx.amount a un numero ***
+                const parsedAmount = parseFloat(tx.amount); // Converti la stringa in un numero float
+
                 switch (tx.type) {
                     case "riscatto_spedizione_gratuita":
                         title = `📦 Riscatto Spedizione`;
-                        // La colonna 'description' della transazione dovrebbe contenere i dettagli come 'Spedizioni Prima/Dopo'
-                        // o dovrai recuperare quei dati in un modo diverso se non sono nella descrizione.
-                        // Ho semplificato per ora basandomi sulla descrizione che salvi.
-                        description = `**Utente:** <@${tx.user_id}>\n**Importo accreditato:** ${tx.amount.toFixed(2)}${CURRENCY}\n${tx.description}`;
+                        description = `**Utente:** <@${tx.user_id}>\n**Importo accreditato:** ${parsedAmount.toFixed(2)}${CURRENCY}\n${tx.description}`;
                         break;
                     case "ricarica_crediti":
                         title = `💳 Ricarica Crediti`;
-                        // Qui l'originale usava tx.rechargeAmount, tx.finalAmountAdded, tx.bonusRateApplied, tx.referralBonusGiven, tx.staffUsername, tx.staffId.
-                        // Questi campi dovrebbero essere inclusi nella 'description' o aggiunti come colonne separate in 'transactions' se vuoi filtrarli/mostrarli così dettagliati.
-                        description = `**Utente:** <@${tx.user_id}>\n**Importo Finale:** ${tx.amount.toFixed(2)}${CURRENCY}\n${tx.description}`;
+                        description = `**Utente:** <@${tx.user_id}>\n**Importo Finale:** ${parsedAmount.toFixed(2)}${CURRENCY}\n${tx.description}`;
                         break;
                     case "bonus_referral_ricevuto":
                         title = `🎉 Bonus Referral`;
-                        description = `**Utente:** <@${tx.user_id}>\n**Importo Bonus:** ${tx.amount.toFixed(2)}${CURRENCY}\n${tx.description}`;
+                        description = `**Utente:** <@${tx.user_id}>\n**Importo Bonus:** ${parsedAmount.toFixed(2)}${CURRENCY}\n${tx.description}`;
                         break;
                     case "rimozione_crediti":
                         title = `➖ Rimozione Crediti`;
-                        description = `**Utente:** <@${tx.user_id}>\n**Importo Rimosso:** ${(-tx.amount).toFixed(2)}${CURRENCY}\n${tx.description}`; // amount sarà negativo
+                        description = `**Utente:** <@${tx.user_id}>\n**Importo Rimosso:** ${(-parsedAmount).toFixed(2)}${CURRENCY}\n${tx.description}`;
                         break;
                     case "crediti_spesi":
                         title = `💸 Crediti Spesi`;
-                        description = `**Utente:** <@${tx.user_id}>\n**Importo Speso:** ${(-tx.amount).toFixed(2)}${CURRENCY}\n${tx.description}`;
+                        description = `**Utente:** <@${tx.user_id}>\n**Importo Speso:** ${(-parsedAmount).toFixed(2)}${CURRENCY}\n${tx.description}`;
                         break;
                     default:
                         title = `ℹ️ Transazione Generica (${tx.type})`;
-                        description = `**Utente:** <@${tx.user_id}>\n**Importo:** ${tx.amount.toFixed(2)}${CURRENCY}\n${tx.description}`;
+                        description = `**Utente:** <@${tx.user_id}>\n**Importo:** ${parsedAmount.toFixed(2)}${CURRENCY}\n${tx.description}`;
                         break;
                 }
                 
@@ -124,14 +114,13 @@ module.exports = {
                 });
             }
 
-            await interaction.reply({ embeds: [embed], ephemeral: true }); // flags: 64 è deprecato
+            await interaction.reply({ embeds: [embed], ephemeral: true });
 
         } catch (error) {
             console.error('Errore nel comando /view_transactions:', error);
             const errorEmbed = new EmbedBuilder()
                 .setColor("#FF0000")
                 .setDescription("❌ Si è verificato un errore durante il recupero delle transazioni. Riprova più tardi.");
-            // Assicurati di rispondere all'interazione se non è già stato fatto
             if (!interaction.replied && !interaction.deferred) {
                 await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
             } else {
