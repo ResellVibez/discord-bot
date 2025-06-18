@@ -2,28 +2,27 @@ const { EmbedBuilder, SlashCommandBuilder, PermissionFlagsBits } = require("disc
 
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName('aggiungi') // Slash command name
+        .setName('aggiungi')
         .setDescription('Aggiunge un importo specifico ai crediti di un utente.')
-        .addUserOption(option => // Add option for the target user
+        .addUserOption(option =>
             option.setName('utente')
                 .setDescription('L\'utente a cui aggiungere i crediti.')
                 .setRequired(true)
         )
-        .addNumberOption(option => // Add option for the amount
+        .addNumberOption(option =>
             option.setName('importo')
                 .setDescription('L\'importo da aggiungere.')
                 .setRequired(true)
-                .setMinValue(0.01) // Optional: ensure the amount is positive
+                .setMinValue(0.01) // Assicurati che l'importo sia positivo
         )
-        // Set default permissions at the Discord level (only administrators can see/use it)
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator), // Or PermissionFlagsBits.ManageGuild if you prefer a broader permission set
+        // Imposta i permessi a livello di Discord: solo gli amministratori possono vedere/usare questo comando
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-    async execute({ interaction, client, config, saveCredits }) {
-        const { CURRENCY, ADMIN_ROLES_IDS, ERROR_MESSAGE_TIMEOUT_MS } = config;
+    // Rimuoviamo 'saveCredits' dai parametri, useremo direttamente 'dataStore'
+    async execute({ interaction, client, config, dataStore }) { // AGGIUNTO: dataStore
+        const { CURRENCY, ADMIN_ROLES_IDS } = config; // Rimosso ERROR_MESSAGE_TIMEOUT_MS perché non usato qui
 
-        // The permission check below becomes partially redundant thanks to setDefaultMemberPermissions,
-        // but it's still good practice to keep it for a double-check or if Discord permissions
-        // are not perfectly configured (e.g., if you deploy globally and then set role overrides).
+        // Questo controllo dei permessi è una buona ridondanza, anche se Discord.js lo gestisce già
         const member = interaction.member;
         const adminRoles = ADMIN_ROLES_IDS || [];
         const memberRoles = member.roles.cache.map(role => role.id);
@@ -33,16 +32,12 @@ module.exports = {
             const noPermsEmbed = new EmbedBuilder()
                 .setColor("#FF0000")
                 .setDescription("❌ Non hai i permessi per usare questo comando.");
-            // For slash commands, reply ephemerally (only you see the message)
             return interaction.reply({ embeds: [noPermsEmbed], ephemeral: true });
         }
 
-        // Retrieve arguments from slash command options
         const targetUser = interaction.options.getUser('utente');
         const amount = interaction.options.getNumber('importo');
 
-        // Input validation for amount <= 0 could be handled by .setMinValue(0.01) above
-        // but an additional check doesn't hurt.
         if (amount <= 0) {
             const errorEmbed = new EmbedBuilder()
                 .setColor("#FF0000")
@@ -50,20 +45,47 @@ module.exports = {
             return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
         }
 
-        client.userCredits[targetUser.id] = (client.userCredits[targetUser.id] || 0) + amount;
-        await saveCredits(client.userCredits);
+        let currentBalance; // Variabile per tenere traccia del saldo prima dell'operazione
 
+        try {
+            // 1. Recupera il saldo attuale dell'utente dal database
+            currentBalance = await dataStore.getUserCredits(targetUser.id);
 
-        const successEmbed = new EmbedBuilder()
-            .setColor("#00FF00")
-            .setDescription(`⚡ ${targetUser.toString()} ha ricevuto **${amount.toFixed(2)}${CURRENCY}** (credito diretto)`) // Corrected template literal
-            .addFields({
-                name: "Nuovo saldo",
-                value: `${client.userCredits[targetUser.id].toFixed(2)}${CURRENCY}`, // Corrected template literal
-                inline: true,
-            });
+            // 2. Aggiungi i crediti usando il metodo addCredits del DataStore
+            const success = await dataStore.addCredits(targetUser.id, amount);
 
-        // Reply to the slash command. Not ephemeral for success.
-        return interaction.reply({ embeds: [successEmbed] });
+            if (!success) {
+                throw new Error("Impossibile aggiornare il saldo nel database.");
+            }
+
+            // 3. Recupera il NUOVO saldo dopo l'operazione per visualizzarlo correttamente
+            const newBalance = await dataStore.getUserCredits(targetUser.id);
+
+            // 4. Registra la transazione
+            await dataStore.addTransaction(
+                targetUser.id,
+                'ricarica_diretta', // Tipo di transazione
+                amount,
+                `Aggiunta diretta da ${interaction.user.tag}`
+            );
+
+            const successEmbed = new EmbedBuilder()
+                .setColor("#00FF00")
+                .setDescription(`⚡ ${targetUser.toString()} ha ricevuto **${amount.toFixed(2)}${CURRENCY}** (credito diretto)`)
+                .addFields({
+                    name: "Nuovo saldo",
+                    value: `${newBalance.toFixed(2)}${CURRENCY}`,
+                    inline: true,
+                });
+
+            return interaction.reply({ embeds: [successEmbed] });
+
+        } catch (error) {
+            console.error(`Errore nel comando /aggiungi per ${targetUser.id}:`, error);
+            const errorEmbed = new EmbedBuilder()
+                .setColor("#FF0000")
+                .setDescription("❌ Si è verificato un errore durante l'aggiunta dei crediti. Riprova più tardi.");
+            return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+        }
     },
 };
