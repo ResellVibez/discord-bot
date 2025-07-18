@@ -1,15 +1,21 @@
-// dataStore.js
-
+/**
+ * Classe per la gestione della persistenza dei dati su un database PostgreSQL.
+ * Gestisce crediti, referral, spedizioni e transazioni.
+ */
 class DataStore {
-    // Il costruttore ora riceve il pool di connessioni del database
+    /**
+     * @param {object} dbPool Un'istanza del pool di connessioni del database (es. node-postgres).
+     */
     constructor(dbPool) {
         if (!dbPool) {
             throw new Error('DataStore richiede un pool di connessioni al database PostgreSQL.');
         }
-        this.db = dbPool; // Salva l'istanza del pool di connessioni al database
+        this.db = dbPool;
     }
 
-    // --- Metodo di Inizializzazione del Database (Creazione Tabelle) ---
+    /**
+     * Inizializza il database creando le tabelle necessarie se non esistono già.
+     */
     async initDatabase() {
         console.log('Inizializzazione tabelle database...');
         try {
@@ -22,8 +28,7 @@ class DataStore {
             `);
             console.log('✅ Tabella users_credits verificata/creata.');
 
-            // Tabella per i codici referral (basata su 'referrals.json')
-            // Avrà bisogno di due tabelle: una per i codici e una per gli utenti referenziati
+            // Tabella per i codici referral
             await this.db.query(`
                 CREATE TABLE IF NOT EXISTS referral_codes (
                     code VARCHAR(255) PRIMARY KEY,
@@ -34,6 +39,7 @@ class DataStore {
             `);
             console.log('✅ Tabella referral_codes verificata/creata.');
 
+            // Tabella per tracciare chi è stato referenziato da chi
             await this.db.query(`
                 CREATE TABLE IF NOT EXISTS referred_users (
                     user_id VARCHAR(255) PRIMARY KEY,
@@ -48,7 +54,7 @@ class DataStore {
             `);
             console.log('✅ Tabella referred_users verificata/creata.');
 
-            // Tabella per le spedizioni gratuite (basata su 'freeShippings.json')
+            // Tabella per il conteggio delle spedizioni gratuite
             await this.db.query(`
                 CREATE TABLE IF NOT EXISTS user_free_shippings (
                     user_id VARCHAR(255) PRIMARY KEY,
@@ -57,12 +63,12 @@ class DataStore {
             `);
             console.log('✅ Tabella user_free_shippings verificata/creata.');
 
-            // Tabella per le transazioni (basata su 'transactions.json')
+            // Tabella per lo storico di tutte le transazioni
             await this.db.query(`
                 CREATE TABLE IF NOT EXISTS transactions (
                     id SERIAL PRIMARY KEY,
                     user_id VARCHAR(255) NOT NULL,
-                    type VARCHAR(50) NOT NULL, -- es. 'ricarica', 'spesa', 'referral_bonus'
+                    type VARCHAR(50) NOT NULL,
                     amount NUMERIC(10, 2) NOT NULL,
                     timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                     description TEXT
@@ -70,26 +76,26 @@ class DataStore {
             `);
             console.log('✅ Tabella transactions verificata/creata.');
 
-
         } catch (err) {
             console.error('❌ Errore critico durante l\'inizializzazione delle tabelle del database:', err);
-            throw err; // Rilancia l'errore per bloccare il bot se non si riesce a inizializzare il DB
+            throw err;
         }
     }
 
-    // --- 💰 CREDITI UTENTE ---
-    //getUserCredits: Legge il saldo di un singolo utente
+    // --- Gestione Crediti Utente ---
+
+    /** Recupera il saldo crediti di un utente. */
     async getUserCredits(userId) {
         try {
             const res = await this.db.query('SELECT balance FROM users_credits WHERE user_id = $1', [userId]);
-            return parseFloat(res.rows[0]?.balance || 0); // Restituisce il saldo o 0 se non trovato
+            return parseFloat(res.rows[0]?.balance || 0);
         } catch (error) {
             console.error(`Errore nel recupero crediti per ${userId}:`, error);
             return 0;
         }
     }
 
-    // setUserCredits: Imposta (o aggiorna) il saldo di un singolo utente
+    /** Imposta o aggiorna il saldo crediti di un utente. */
     async setUserCredits(userId, newBalance) {
         try {
             await this.db.query(
@@ -103,7 +109,7 @@ class DataStore {
         }
     }
 
-    // addCredits: Aggiunge crediti al saldo esistente di un utente
+    /** Aggiunge un importo al saldo di un utente. */
     async addCredits(userId, amount) {
         try {
             await this.db.query(
@@ -117,7 +123,7 @@ class DataStore {
         }
     }
 
-    // removeCredits: Rimuove crediti dal saldo esistente di un utente
+    /** Rimuove un importo dal saldo di un utente. */
     async removeCredits(userId, amount) {
         try {
             await this.db.query(
@@ -131,13 +137,12 @@ class DataStore {
         }
     }
 
+    // --- Gestione Referral ---
 
-    // --- 📦 REFERRALS ---
-    // getReferralCodes: Ottiene tutti i codici referral e i loro proprietari
+    /** Ottiene un oggetto con tutti i codici referral. */
     async getReferralCodes() {
         try {
             const res = await this.db.query('SELECT code, owner_id, uses FROM referral_codes');
-            // Formatta il risultato per essere simile a quello del JSON se necessario
             const codes = {};
             res.rows.forEach(row => {
                 codes[row.code] = { ownerId: row.owner_id, uses: row.uses };
@@ -149,7 +154,7 @@ class DataStore {
         }
     }
 
-    // createReferralCode: Crea un nuovo codice referral
+    /** Crea un nuovo codice referral per un utente. */
     async createReferralCode(code, ownerId) {
         try {
             await this.db.query(
@@ -163,7 +168,7 @@ class DataStore {
         }
     }
 
-    // incrementReferralUses: Incrementa l'uso di un codice referral
+    /** Incrementa il contatore di utilizzi di un codice. */
     async incrementReferralUses(code) {
         try {
             await this.db.query(
@@ -177,7 +182,7 @@ class DataStore {
         }
     }
 
-    // getReferredUsers: Ottiene tutti gli utenti referenziati
+    /** Ottiene un oggetto con tutti gli utenti che sono stati referenziati. */
     async getReferredUsers() {
         try {
             const res = await this.db.query('SELECT user_id, referred_by_code, claimed_free_shipping FROM referred_users');
@@ -192,7 +197,7 @@ class DataStore {
         }
     }
 
-    // addReferredUser: Aggiunge un utente referenziato
+    /** Aggiunge un nuovo utente alla lista dei referenziati. */
     async addReferredUser(userId, referredByCode) {
         try {
             await this.db.query(
@@ -206,7 +211,7 @@ class DataStore {
         }
     }
 
-    // setClaimedFreeShipping: Marca la spedizione gratuita come riscattata
+    /** Imposta lo stato di "spedizione gratuita riscattata" per un utente. */
     async setClaimedFreeShipping(userId, claimed) {
         try {
             await this.db.query(
@@ -220,9 +225,9 @@ class DataStore {
         }
     }
 
+    // --- Gestione Spedizioni Gratuite ---
 
-    // --- 🚚 SPEDIZIONI GRATUITE ---
-    // getUserFreeShippings: Ottiene il numero di spedizioni gratuite di un utente
+    /** Recupera il numero di spedizioni gratuite di un utente. */
     async getUserFreeShippings(userId) {
         try {
             const res = await this.db.query('SELECT count FROM user_free_shippings WHERE user_id = $1', [userId]);
@@ -233,7 +238,7 @@ class DataStore {
         }
     }
 
-    // addUserFreeShippings: Aggiunge spedizioni gratuite a un utente
+    /** Aggiunge una o più spedizioni gratuite a un utente. */
     async addUserFreeShippings(userId, amount) {
         try {
             await this.db.query(
@@ -247,12 +252,12 @@ class DataStore {
         }
     }
 
-    // removeUserFreeShippings: Rimuove spedizioni gratuite da un utente
+    /** Rimuove una o più spedizioni gratuite da un utente, senza scendere sotto zero. */
     async removeUserFreeShippings(userId, amount) {
         try {
             await this.db.query(
                 'INSERT INTO user_free_shippings (user_id, count) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET count = GREATEST(0, user_free_shippings.count - $3)',
-                [userId, 0, amount] // 0 per insert iniziale, ma l'importante è il GREATEST
+                [userId, 0, amount]
             );
             return true;
         } catch (error) {
@@ -261,9 +266,9 @@ class DataStore {
         }
     }
 
+    // --- Gestione Transazioni ---
 
-    // --- 💳 TRANSAZIONI ---
-    // addTransaction: Aggiunge una nuova transazione
+    /** Registra una nuova transazione (es. ricarica, spesa, bonus). */
     async addTransaction(userId, type, amount, description = null) {
         try {
             await this.db.query(
@@ -277,7 +282,7 @@ class DataStore {
         }
     }
 
-    // getTransactionsByUserId: Recupera le transazioni per un utente specifico
+    /** Recupera le ultime transazioni di un utente specifico. */
     async getTransactionsByUserId(userId, limit = 10) {
         try {
             const res = await this.db.query(
@@ -291,7 +296,7 @@ class DataStore {
         }
     }
 
-    // getAllTransactions: Recupera tutte le transazioni (potrebbe essere lento con molti dati)
+    /** Recupera tutte le transazioni dal database (usare con cautela). */
     async getAllTransactions(limit = 100) {
         try {
             const res = await this.db.query(
